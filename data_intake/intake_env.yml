@@ -1,0 +1,9 @@
+name: intake
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python
+  - boto3
+  - siphon
+  - python-dotenv
