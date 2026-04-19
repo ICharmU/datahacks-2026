@@ -11,6 +11,7 @@ https://docs.djangoproject.com/en/4.2/ref/settings/
 """
 
 from pathlib import Path
+import os
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -19,14 +20,13 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/4.2/howto/deployment/checklist/
 
-# SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-=_au@f#2fl+)lt46j4-2%$di(mc@x%1hsiz8l&)f(nse%+*7&7'
+SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", 'django-insecure-=_au@f#2fl+)lt46j4-2%$di(mc@x%1hsiz8l&)f(nse%+*7&7')
+DEBUG = os.getenv("DJANGO_DEBUG", "1") == "1"
 
-# SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
-
-ALLOWED_HOSTS = []
-
+ALLOWED_HOSTS = [
+    "localhost",
+    "127.0.0.1",
+]
 
 # Application definition
 
@@ -41,6 +41,7 @@ INSTALLED_APPS = [
     "rest_framework",
     "corsheaders",
 
+    "common",
     "core",
     "locations",
     "risk",
@@ -86,6 +87,7 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = 'config.wsgi.application'
+ASGI_APPLICATION = "config.asgi.application"
 
 
 # Database
@@ -139,3 +141,7 @@ STATIC_URL = 'static/'
 # https://docs.djangoproject.com/en/4.2/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+TOXIC_TIDE_USE_MOCK_DATA = os.getenv("TOXIC_TIDE_USE_MOCK_DATA", "1") == "1"
+TOXIC_TIDE_ENV = os.getenv("TOXIC_TIDE_ENV", "dev")
+TOXIC_TIDE_AWS_REGION = os.getenv("TOXIC_TIDE_AWS_REGION", "us-west-2")
