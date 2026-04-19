@@ -4,6 +4,21 @@ from django.conf import settings
 from ingestion.services import ServingDataService
 from .mock_data import MOCK_MAP, MOCK_DETAILS, MOCK_FISHING
 
+def _format_display_date(value):
+    if not value:
+        return "Unknown date"
+    text = str(value)
+    try:
+        if "T" in text:
+            dt = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        else:
+            dt = datetime.fromisoformat(text)
+        return dt.strftime("%b %d, %Y")
+    except Exception:
+        return text.split("T")[0]
+
+def _harvest_window_label(risk_level, calendar_date):
+    return f"{str(risk_level).title()} risk - {_format_display_date(calendar_date)}"
 
 def _to_iso_date(value):
     if not value:
@@ -79,6 +94,12 @@ class RiskService:
 
     @staticmethod
     def get_map(shell: str, wrapper: str, horizon: str):
+        def _uncertainty_from_confidence(confidence):
+            if confidence is None:
+                return None
+            c = float(confidence)
+            # soften extremes for the map demo
+            return max(0.15, min(0.85, 1.0 - c))
         if wrapper == "beach":
             rows = RiskService.get_beach_scores()
             return {
@@ -94,7 +115,8 @@ class RiskService:
                         "lon": r["lon_dec"],
                         "risk_score": r["risk_score"],
                         "risk_bucket": r["risk_level"],
-                        "uncertainty_score": None if r.get("confidence") is None else (1 - float(r["confidence"])),
+                        "uncertainty_score": _uncertainty_from_confidence(r.get("confidence")),
+                        "confidence_score": None if r.get("confidence") is None else float(r.get("confidence")),
                         "recommendation": _recommendation_from_alert_status(r.get("alert_status", "watch")),
                     }
                     for r in rows
@@ -116,7 +138,8 @@ class RiskService:
                         "lon": r["lon_dec"],
                         "risk_score": r["risk_score"],
                         "risk_bucket": r["risk_level"],
-                        "uncertainty_score": None if r.get("confidence") is None else (1 - float(r["confidence"])),
+                        "uncertainty_score": _uncertainty_from_confidence(r.get("confidence")),
+                        "confidence_score": None if r.get("confidence") is None else float(r.get("confidence")),
                         "recommendation": _recommendation_from_alert_status(r.get("alert_status", "watch")),
                     }
                     for r in rows
@@ -136,6 +159,22 @@ class RiskService:
     def get_grower_dashboard(region: str):
         rows = RiskService.get_aquaculture_watchlist()
         rows = [r for r in rows if region.lower() in (r.get("region_name") or "").lower()] or rows
+
+        ACTION_PRIORITY = {
+            "warn_buyers": 0,
+            "sample": 1,
+            "delay": 2,
+            "harvest": 3,
+        }
+
+        rows = sorted(
+            rows,
+            key=lambda r: (
+                ACTION_PRIORITY.get(_recommendation_from_alert_status(r.get("alert_status", "watch")), 99),
+                -(float(r.get("confidence") or 0.0)),
+                -(float(r.get("risk_score") or 0.0)),
+            )
+        )
 
         alerts = []
         for r in rows:
@@ -177,7 +216,7 @@ class RiskService:
                 "lon": r["lon_dec"],
                 "recommendation": _recommendation_from_alert_status(r.get("alert_status", "watch")),
                 "risk_score": r["risk_score"],
-                "harvest_window_label": f"{str(r.get('risk_level', 'unknown')).title()} risk · {r.get('calendar_date')}",
+                "harvest_window_label": _harvest_window_label(r.get("risk_level", "unknown"), r.get("calendar_date")),
                 "confidence_score": float(r.get("confidence") or 0.0),
                 "latest_signal_summary": f"Biogeochemistry={round(float(r.get('component_biogeochemistry') or 0), 2)} | Contamination={round(float(r.get('component_contamination_proxy') or 0), 2)} | Hydrodynamics={round(float(r.get('component_hydrodynamics') or 0), 2)}",
             }
@@ -236,7 +275,7 @@ class RiskService:
             "site_name": latest["site_name"],
             "recommendation": _recommendation_from_alert_status(latest.get("alert_status", "watch")),
             "confidence_score": float(latest.get("confidence") or 0.0),
-            "harvest_window_label": f"{str(latest.get('risk_level', 'unknown')).title()} risk · {latest.get('calendar_date')}",
+            "harvest_window_label": _harvest_window_label(latest.get("risk_level", "unknown"), latest.get("calendar_date")),
             "forecast": forecast,
             "top_factors": top_factors,
             "advisories": advisories,
