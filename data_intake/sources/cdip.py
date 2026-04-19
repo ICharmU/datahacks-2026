@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from common.aws import make_s3_client
@@ -16,6 +17,62 @@ from common.validate import validate_local_file, validate_s3_upload
 from .cdip_manifest import CDIP_FILES
 
 SOURCE_NAME = "cdip"
+
+from common.aws import s3_head_object
+
+
+def should_skip_remote_upload(s3, bucket_name: str, key: str, expected_size: int) -> bool:
+    head = s3_head_object(s3, bucket_name, key)
+    if head is None:
+        return False
+    return int(head["ContentLength"]) == expected_size
+
+
+def _enrich_summary_for_netcdf(local_path: Path, summary: dict) -> dict:
+    enriched = dict(summary)
+
+    try:
+        import xarray as xr
+
+        with xr.open_dataset(local_path, decode_times=False) as ds:
+            enriched["netcdf_overview"] = {
+                "dims": {str(name): int(size) for name, size in ds.sizes.items()},
+                "n_dims": int(len(ds.sizes)),
+                "data_vars": [str(name) for name in ds.data_vars],
+                "n_data_vars": int(len(ds.data_vars)),
+                "coords": [str(name) for name in ds.coords],
+                "n_coords": int(len(ds.coords)),
+                "attrs": sorted(str(name) for name in ds.attrs.keys()),
+            }
+    except Exception as exc:
+        enriched["netcdf_overview_error"] = str(exc)
+
+    return enriched
+
+
+def emit_record_log(record: dict) -> None:
+    summary = record.get("summary", {}) or {}
+    validation = record.get("validation", {}) or {}
+    local_v = validation.get("local", {}) or {}
+    s3_v = validation.get("s3", {}) or {}
+
+    print(
+        json.dumps(
+            {
+                "file": record.get("filename"),
+                "status": record.get("status"),
+                "size_bytes": record.get("size_bytes"),
+                "source_url": record.get("source_url"),
+                "s3_key": record.get("s3_key"),
+                "local_validation": local_v,
+                "s3_validation": s3_v,
+                "summary": summary,
+                "error": record.get("error"),
+            },
+            indent=2,
+            default=str,
+        )
+    )
 
 
 def run(ctx: IngestionContext) -> dict:
@@ -38,95 +95,129 @@ def run(ctx: IngestionContext) -> dict:
         url = item["url"]
         filename = item["filename"]
 
-        local_path = cache_dir / filename
-
-        if should_redownload(local_path, force_refresh=ctx.force_refresh):
-            stream_download_to_path(
-                url,
-                local_path,
-                timeout=ctx.request_timeout_sec,
-                user_agent=ctx.user_agent,
-                settings=transfer_settings,
-                desc=f"cdip:{filename}",
-                position=position,
-            )
-            save_cache_metadata(
-                local_path,
-                {
-                    "source_name": SOURCE_NAME,
-                    "source_group": group,
-                    "source_url": url,
-                    "downloaded_at_utc": utc_now_iso(),
-                },
-            )
-
-        local_validation = validate_local_file(local_path, expected_suffixes={".nc", ".netcdf"})
-
         try:
-            summary = summarize_file(local_path)
-        except Exception as e:
-            summary = {
-                "file_type": "unparsed",
-                "size_bytes": local_path.stat().st_size,
-                "summary_error": str(e),
-                "note": "Fell back to metadata-only summary after parse failure.",
-            }
+            local_path = cache_dir / filename
 
-        summary["source_name"] = SOURCE_NAME
-        summary["source_group"] = group
-        summary["source_url"] = url
-        summary["filename"] = local_path.name
+            if should_redownload(local_path, force_refresh=ctx.force_refresh):
+                stream_download_to_path(
+                    url,
+                    local_path,
+                    timeout=ctx.request_timeout_sec,
+                    user_agent=ctx.user_agent,
+                    settings=transfer_settings,
+                    desc=f"cdip:{filename}",
+                    position=position,
+                )
+                save_cache_metadata(
+                    local_path,
+                    {
+                        "source_name": SOURCE_NAME,
+                        "source_group": group,
+                        "source_url": url,
+                        "downloaded_at_utc": utc_now_iso(),
+                    },
+                )
 
-        local_summary_path = summary_dir / f"{group}__{local_path.name}.summary.json"
-        write_summary_json(local_summary_path, summary)
+            local_validation = validate_local_file(local_path, expected_suffixes={".nc", ".netcdf"})
 
-        raw_key = f"sources/{SOURCE_NAME}/raw/run_date={ctx.run_date}/{group}/{local_path.name}"
-        summary_key = f"sources/{SOURCE_NAME}/summaries/{ctx.run_id}/{group}/{local_path.name}.summary.json"
+            try:
+                summary = summarize_file(local_path)
+            except Exception as exc:
+                summary = {
+                    "file_type": "unparsed",
+                    "size_bytes": local_path.stat().st_size,
+                    "summary_error": str(exc),
+                    "note": "Fell back to metadata-only summary after parse failure.",
+                }
 
-        record = SourceFileRecord(
-            source_name=SOURCE_NAME,
-            source_group=group,
-            source_url=url,
-            local_cache_path=str(local_path),
-            s3_key=raw_key,
-            summary_s3_key=summary_key,
-            filename=local_path.name,
-            size_bytes=local_path.stat().st_size,
-            summary=summary,
-            validation={"local": local_validation.to_dict()},
-        )
+            summary["source_name"] = SOURCE_NAME
+            summary["source_group"] = group
+            summary["source_url"] = url
+            summary["filename"] = local_path.name
+            summary = _enrich_summary_for_netcdf(local_path, summary)
 
-        if not ctx.dry_run:
-            upload_path_with_progress(
-                s3,
-                bucket_name=ctx.bucket_name,
-                key=raw_key,
-                local_path=local_path,
-                settings=transfer_settings,
-                position=position,
+            local_summary_path = summary_dir / f"{group}__{local_path.name}.summary.json"
+            write_summary_json(local_summary_path, summary)
+
+            raw_key = f"sources/{SOURCE_NAME}/raw/run_date={ctx.run_date}/{group}/{local_path.name}"
+            summary_key = f"sources/{SOURCE_NAME}/summaries/{ctx.run_id}/{group}/{local_path.name}.summary.json"
+
+            record = SourceFileRecord(
+                source_name=SOURCE_NAME,
+                source_group=group,
+                source_url=url,
+                local_cache_path=str(local_path),
+                s3_key=raw_key,
+                summary_s3_key=summary_key,
+                filename=local_path.name,
+                size_bytes=local_path.stat().st_size,
+                summary=summary,
+                validation={"local": local_validation.to_dict()},
             )
-            upload_path_with_progress(
-                s3,
-                bucket_name=ctx.bucket_name,
-                key=summary_key,
-                local_path=local_summary_path,
-                content_type="application/json",
-                settings=transfer_settings,
-                position=position,
-            )
 
-            s3_validation = validate_s3_upload(
+            if not ctx.dry_run and should_skip_remote_upload(
                 s3,
                 bucket_name=ctx.bucket_name,
                 key=raw_key,
                 expected_size=local_path.stat().st_size,
-            )
-            record.validation["s3"] = s3_validation.to_dict()
-        else:
-            record.validation["s3"] = {"ok": True, "checks": {"dry_run": True}}
+            ):
+                record.status = "skipped_remote_exists"
+                record.validation["s3"] = {
+                    "ok": True,
+                    "checks": {"remote_exists_same_size": True},
+                }
+                record_dict = record.to_dict()
+                emit_record_log(record_dict)
+                return record_dict
 
-        record.status = "uploaded"
-        return record.to_dict()
+            if not ctx.dry_run:
+                upload_path_with_progress(
+                    s3,
+                    bucket_name=ctx.bucket_name,
+                    key=raw_key,
+                    local_path=local_path,
+                    settings=transfer_settings,
+                    position=position,
+                )
+                upload_path_with_progress(
+                    s3,
+                    bucket_name=ctx.bucket_name,
+                    key=summary_key,
+                    local_path=local_summary_path,
+                    content_type="application/json",
+                    settings=transfer_settings,
+                    position=position,
+                )
+
+                s3_validation = validate_s3_upload(
+                    s3,
+                    bucket_name=ctx.bucket_name,
+                    key=raw_key,
+                    expected_size=local_path.stat().st_size,
+                )
+                record.validation["s3"] = s3_validation.to_dict()
+            else:
+                record.validation["s3"] = {"ok": True, "checks": {"dry_run": True}}
+
+            record.status = "uploaded"
+            record_dict = record.to_dict()
+            emit_record_log(record_dict)
+            return record_dict
+        except Exception as exc:
+            failure_record = {
+                "source_name": SOURCE_NAME,
+                "source_group": group,
+                "source_url": url,
+                "filename": filename,
+                "status": "failed",
+                "size_bytes": None,
+                "s3_key": None,
+                "summary": {},
+                "validation": {},
+                "error": str(exc),
+            }
+            emit_record_log(failure_record)
+            return failure_record
 
     records = run_parallel(
         CDIP_FILES,

@@ -3,6 +3,7 @@ CALCOFI_FILES = [
         "group": "bottle_database",
         "name": "bottle_database_zip",
         "url": "https://calcofi.org/downloads/database/CalCOFI_Database_194903-202105_csv_16October2023.zip",
+        
         "kind": "file",
         "preferred_format": "csv",
         "filename": "CalCOFI_Database_194903-202105_csv_16October2023.zip",
