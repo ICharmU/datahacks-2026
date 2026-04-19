@@ -1,0 +1,11 @@
+name: databricks_model
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python
+  - python-dotenv
+  - numpy
+  - pandas
+  - mlflow
+  - databricks-sdk
