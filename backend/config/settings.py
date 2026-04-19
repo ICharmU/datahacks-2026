@@ -145,3 +145,24 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 TOXIC_TIDE_USE_MOCK_DATA = os.getenv("TOXIC_TIDE_USE_MOCK_DATA", "1") == "1"
 TOXIC_TIDE_ENV = os.getenv("TOXIC_TIDE_ENV", "dev")
 TOXIC_TIDE_AWS_REGION = os.getenv("TOXIC_TIDE_AWS_REGION", "us-west-2")
+
+TOXIC_TIDE_SERVING_BUCKET = os.getenv("TOXIC_TIDE_SERVING_BUCKET", "toxictide-public")
+TOXIC_TIDE_SERVING_PREFIX = os.getenv("TOXIC_TIDE_SERVING_PREFIX", "serving/latest")
+TOXIC_TIDE_SERVING_CACHE_SECONDS = int(os.getenv("TOXIC_TIDE_SERVING_CACHE_SECONDS", "120"))
+TOXIC_TIDE_ALLOW_MOCK_FLEET = os.getenv("TOXIC_TIDE_ALLOW_MOCK_FLEET", "1") == "1"
+
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+        "LOCATION": "toxictide-serving-cache",
+    }
+}
+
+REST_FRAMEWORK = {
+    "DEFAULT_RENDERER_CLASSES": [
+        "rest_framework.renderers.JSONRenderer",
+    ],
+    "DEFAULT_PARSER_CLASSES": [
+        "rest_framework.parsers.JSONParser",
+    ],
+}

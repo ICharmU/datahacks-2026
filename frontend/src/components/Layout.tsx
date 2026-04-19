@@ -46,7 +46,7 @@ export function Layout({
     <div className="app-shell">
       <header className="app-header">
         <div>
-          <Link to="/" className="brand">BlueYield</Link>
+          <Link to="/" className="brand">AquaYield</Link>
           <p className="brand-subtitle">Climate-smart coastal decision platform for fleets and growers.</p>
         </div>
         <DataModeToggle mode={dataMode} onChange={onDataModeChange} />

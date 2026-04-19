@@ -1,6 +1,6 @@
 export type ProductShell = "fleet" | "grower"
 export type DataMode = "mock" | "real"
-export type WrapperType = "beach" | "fishing" | "surf" | "ecosystem"
+export type WrapperType = "aquaculture" | "beach" | "fishing" | "surf" | "ecosystem"
 export type RecommendationAction = "go" | "caution" | "avoid" | "harvest" | "delay" | "sample" | "warn_buyers"
 
 export interface ApiEnvelope<T> {
@@ -22,6 +22,7 @@ export interface ShellSummaryCard {
   tone: "neutral" | "good" | "warn" | "bad"
 }
 
+
 export interface ZonePoint {
   location_id: string
   name: string
@@ -30,8 +31,11 @@ export interface ZonePoint {
   risk_score: number
   risk_bucket: string
   uncertainty_score?: number | null
+  confidence_score?: number | null
   opportunity_score?: number | null
   recommendation?: RecommendationAction
+  region_name?: string
+  latest_signal_summary?: string
 }
 
 export interface TimePoint {

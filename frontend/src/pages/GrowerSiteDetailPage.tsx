@@ -5,9 +5,10 @@ import type { DataMode, GrowerSiteDetail } from "../types"
 import { ForecastChartPlaceholder } from "../components/ForecastChartPlaceholder"
 import { FactorList } from "../components/FactorList"
 import { AdvisoryList } from "../components/AdvisoryList"
+import { RiskBadge } from "../components/RiskBadge"
 
 export function GrowerSiteDetailPage({ dataMode }: { dataMode: DataMode }) {
-  const { siteId = "farm-sd-01" } = useParams()
+  const { siteId = "aq_san_diego_bay" } = useParams()
   const [data, setData] = useState<GrowerSiteDetail | null>(null)
 
   useEffect(() => {
@@ -20,19 +21,19 @@ export function GrowerSiteDetailPage({ dataMode }: { dataMode: DataMode }) {
     <div className="page-stack">
       <section className="page-header-card">
         <div>
-          <div className="eyebrow">Grower site detail</div>
+          <div className="eyebrow">Aquaculture site detail</div>
           <h1>{data.site_name}</h1>
           <p>{data.recommended_action_text}</p>
         </div>
         <div className="pill-group">
-          <span className="pill">Action: {data.recommendation}</span>
+          <RiskBadge label={data.recommendation} />
           <span className="pill">{data.harvest_window_label}</span>
           <span className="pill">Confidence {Math.round(data.confidence_score * 100)}%</span>
         </div>
       </section>
 
       <div className="two-col-grid">
-        <ForecastChartPlaceholder data={data.forecast} title="Site risk trajectory" />
+        <ForecastChartPlaceholder data={data.forecast} title="Aquaculture risk trajectory" />
         <FactorList factors={data.top_factors} />
       </div>
 

@@ -1,8 +1,7 @@
 from django.urls import path
-from .views import health, config_view, wrappers
+from .views import app_config, science_summary
 
 urlpatterns = [
-    path("health/", health, name="health"),
-    path("config/", config_view, name="config"),
-    path("wrappers/", wrappers, name="wrappers"),
+    path("config/", app_config, name="app-config"),
+    path("product/science/summary/", science_summary, name="science-summary"),
 ]
