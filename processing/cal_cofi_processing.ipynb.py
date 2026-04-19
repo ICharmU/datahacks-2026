@@ -42,10 +42,6 @@ print(f"Combined DataFrame Columns: {df.columns}")
 
 # COMMAND ----------
 
-print(df.columns)
-
-# COMMAND ----------
-
 from pyspark.sql import functions as F
 
 # 1. Feature Categorization
@@ -58,7 +54,7 @@ chemical_features = [
 
 # 2. Imputation & Schema Prep (Assuming df_imputed is ready)
 # Ensure spatial coordinates are handled for the 'if available' logic
-df_prep = df_imputed.withColumn("conventional_date", F.to_date(F.col("Date"), "MM/dd/yyyy"))
+df_prep = df.withColumn("conventional_date", F.to_date(F.col("Date"), "MM/dd/yyyy"))
 
 # 3. Scaling the Environmental Features
 # We only scale the chemical_features; we keep Lat/Long raw for tiling
@@ -151,4 +147,4 @@ output = df_final.select(
     "environmental_features"
 )
 
-display(output)
+output.write.format("delta").mode("overwrite").saveAsTable("default.cal_cofi_tiled")

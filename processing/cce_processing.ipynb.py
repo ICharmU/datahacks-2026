@@ -152,7 +152,6 @@ def apply_noaa_tiling_pipeline(df, feature_cols):
 
 # COMMAND ----------
 
-# COMMAND ----------
 # 1. Anchor the Spark Session (Run this first to avoid SystemError)
 from pyspark.sql import SparkSession
 spark = SparkSession.builder.getOrCreate()
@@ -177,4 +176,16 @@ relevant_features = [v for v in feature_vars if v in ['temp', 'psal', 'depth', '
 # 3. This should now find 'conv_date_str' correctly
 final_state_df = apply_noaa_tiling_pipeline(raw_sdf, relevant_features)
 
-display(final_state_df)
+# Make sure to include tile_id in your final selection!
+output = final_state_df.select(
+    "tile_id",
+    "conventional_date",
+    "Lon_Dec",
+    "Lat_Dec",
+    "environmental_features" 
+)
+
+display(output)
+
+# Write to a Delta table (replace database/table names as needed)
+output.write.format("delta").mode("overwrite").saveAsTable("default.cce_tiled")
