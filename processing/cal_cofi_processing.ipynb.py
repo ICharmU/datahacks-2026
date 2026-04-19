@@ -9,29 +9,68 @@
 # ///
 from dotenv import load_dotenv
 import os
-load_dotenv()
+import boto3
+import pandas as pd
+import io
+import zipfile
+from pyspark.sql import functions as F
 
-s3_base_path = os.getenv('raw_bucket_name') 
-bottle_s3_path = f"s3://{s3_base_path.split(':::')[-1]}/cal_cofi/194903-202105_Bottle.csv"
-cast_s3_path = f"s3://{s3_base_path.split(':::')[-1]}/cal_cofi/194903-202105_Cast.csv"
+load_dotenv()
 
 os.environ['AWS_ACCESS_KEY_ID'] = os.getenv('aws_access_key_id')
 os.environ['AWS_SECRET_ACCESS_KEY'] = os.getenv('aws_secret_access_key')
 os.environ['AWS_DEFAULT_REGION'] = os.getenv('aws_region', 'us-west-2')
 
-# COMMAND ----------
-
-import boto3
-import pandas as pd
-import io
-
-# Initialize the S3 client using the env vars you already set
+# Initialize S3 client
 s3_client = boto3.client(
     's3',
     aws_access_key_id=os.getenv('aws_access_key_id'),
     aws_secret_access_key=os.getenv('aws_secret_access_key'),
     region_name=os.getenv('aws_region', 'us-west-2')
 )
+
+def extract_calcofi_from_zip(bucket, zip_key):
+    """
+    Downloads a zip file from S3 into memory, extracts the Bottle 
+    and Cast CSVs, and returns them as Spark DataFrames.
+    """
+    # 1. Fetch the zip file object from S3
+    print(f"Fetching {zip_key} from {bucket}...")
+    obj = s3_client.get_object(Bucket=bucket, Key=zip_key)
+    zip_buffer = io.BytesIO(obj['Body'].read())
+    
+    bottle_pdf = None
+    cast_pdf = None
+    
+    # 2. Read the zip archive in memory
+    with zipfile.ZipFile(zip_buffer) as z:
+        # Dynamically find the filenames in case the date suffix changes
+        bottle_filename = next(name for name in z.namelist() if 'Bottle.csv' in name)
+        cast_filename = next(name for name in z.namelist() if 'Cast.csv' in name)
+        
+        # 3. Parse Bottle CSV
+        print(f"Extracting {bottle_filename}...")
+        with z.open(bottle_filename) as f:
+            bottle_pdf = pd.read_csv(f, low_memory=False, encoding='latin1')
+            
+        # 4. Parse Cast CSV
+        print(f"Extracting {cast_filename}...")
+        with z.open(cast_filename) as f:
+            cast_pdf = pd.read_csv(f, low_memory=False, encoding='latin1')
+            
+    # 5. Convert to Spark DataFrames
+    return spark.createDataFrame(bottle_pdf), spark.createDataFrame(cast_pdf)
+
+# --- Usage ---
+bucket_name = "toxictide-raw"
+# Use the current run date or dynamically inject it
+run_date = "2026-04-19" 
+zip_key = f"sources/calcofi/raw/run_date={run_date}/bottle_database/CalCOFI_Database_194903-202105_csv_16October2023.zip"
+
+# Unpack both DataFrames directly from the function
+bottle_df, cast_df = extract_calcofi_from_zip(bucket_name, zip_key)
+
+# COMMAND ----------
 
 def s3_to_spark(bucket, key):
     # Fetch the object from S3
