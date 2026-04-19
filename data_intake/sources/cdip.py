@@ -1,44 +1,21 @@
 from __future__ import annotations
 
 from pathlib import Path
-import re
 
 from common.aws import make_s3_client
-from common.cache import get_source_cache_dir, save_cache_metadata
+from common.cache import get_source_cache_dir, save_cache_metadata, should_redownload
 from common.inspect import summarize_file, write_summary_json
 from common.manifest import SourceManifest
 from common.parallel import run_parallel
 from common.progress import TransferSettings, upload_path_with_progress
 from common.download_stream import stream_download_to_path
 from common.types import IngestionContext, SourceFileRecord
-from common.utils import ensure_dir, normalize_filename, utc_now_iso
+from common.utils import ensure_dir, utc_now_iso
 from common.validate import validate_local_file, validate_s3_upload
 
+from .cdip_manifest import CDIP_FILES
 
-SOURCE_NAME = "easyoneargo"
-FILE_KEYS = ["127233", "127234", "126470", "126471", "125529"]
-BASE_URL = "https://www.seanoe.org/data/00961/107233/data/"
-
-from common.aws import s3_head_object
-
-def should_skip_remote_upload(s3, bucket_name: str, key: str, expected_size: int) -> bool:
-    head = s3_head_object(s3, bucket_name, key)
-    if head is None:
-        return False
-    return int(head["ContentLength"]) == expected_size
-
-def _resolve_filename(content_disposition: str | None, key: str) -> str:
-    filename = f"argo_{key}.nc"
-    if content_disposition and "filename=" in content_disposition:
-        matches = re.findall(r'filename="?([^";]+)"?', content_disposition)
-        if matches:
-            filename = matches[0]
-    return normalize_filename(filename)
-
-
-def _find_existing_cached_file(cache_dir: Path, key: str) -> Path | None:
-    candidates = list(cache_dir.glob(f"*{key}*.nc")) + list(cache_dir.glob(f"argo_{key}.nc"))
-    return candidates[0] if candidates else None
+SOURCE_NAME = "cdip"
 
 
 def run(ctx: IngestionContext) -> dict:
@@ -56,45 +33,30 @@ def run(ctx: IngestionContext) -> dict:
         use_threads=True,
     )
 
-    items = [{"key": key, "url": BASE_URL + key} for key in FILE_KEYS]
-
     def worker(item: dict, position: int) -> dict:
-        key = item["key"]
+        group = item["group"]
         url = item["url"]
+        filename = item["filename"]
 
-        existing = None if ctx.force_refresh else _find_existing_cached_file(cache_dir, key)
+        local_path = cache_dir / filename
 
-        if existing is not None:
-            local_path = existing
-            content_type = None
-        else:
-            temp_path = cache_dir / f"argo_{key}.download"
-            content_type, content_disposition, _ = stream_download_to_path(
+        if should_redownload(local_path, force_refresh=ctx.force_refresh):
+            stream_download_to_path(
                 url,
-                temp_path,
+                local_path,
                 timeout=ctx.request_timeout_sec,
                 user_agent=ctx.user_agent,
                 settings=transfer_settings,
-                desc=f"argo:{key}",
+                desc=f"cdip:{filename}",
                 position=position,
             )
-            filename = _resolve_filename(content_disposition, key)
-            final_path = cache_dir / filename
-
-            if temp_path != final_path:
-                if final_path.exists():
-                    final_path.unlink()
-                temp_path.replace(final_path)
-
-            local_path = final_path
             save_cache_metadata(
                 local_path,
                 {
                     "source_name": SOURCE_NAME,
-                    "source_group": None,
+                    "source_group": group,
                     "source_url": url,
                     "downloaded_at_utc": utc_now_iso(),
-                    "content_type": content_type,
                 },
             )
 
@@ -111,42 +73,28 @@ def run(ctx: IngestionContext) -> dict:
             }
 
         summary["source_name"] = SOURCE_NAME
-        summary["source_group"] = None
+        summary["source_group"] = group
         summary["source_url"] = url
         summary["filename"] = local_path.name
 
-        local_summary_path = summary_dir / f"{local_path.name}.summary.json"
+        local_summary_path = summary_dir / f"{group}__{local_path.name}.summary.json"
         write_summary_json(local_summary_path, summary)
 
-        raw_key = f"sources/{SOURCE_NAME}/raw/run_date={ctx.run_date}/{local_path.name}"
-        summary_key = f"sources/{SOURCE_NAME}/summaries/{ctx.run_id}/{local_path.name}.summary.json"
+        raw_key = f"sources/{SOURCE_NAME}/raw/run_date={ctx.run_date}/{group}/{local_path.name}"
+        summary_key = f"sources/{SOURCE_NAME}/summaries/{ctx.run_id}/{group}/{local_path.name}.summary.json"
 
         record = SourceFileRecord(
             source_name=SOURCE_NAME,
-            source_group=None,
+            source_group=group,
             source_url=url,
             local_cache_path=str(local_path),
             s3_key=raw_key,
             summary_s3_key=summary_key,
             filename=local_path.name,
             size_bytes=local_path.stat().st_size,
-            content_type=content_type,
             summary=summary,
             validation={"local": local_validation.to_dict()},
         )
-
-        if not ctx.dry_run and should_skip_remote_upload(
-            s3,
-            bucket_name=ctx.bucket_name,
-            key=raw_key,
-            expected_size=local_path.stat().st_size,
-        ):
-            record.status = "skipped_remote_exists"
-            record.validation["s3"] = {
-                "ok": True,
-                "checks": {"remote_exists_same_size": True},
-            }
-            return record.to_dict()
 
         if not ctx.dry_run:
             upload_path_with_progress(
@@ -181,10 +129,10 @@ def run(ctx: IngestionContext) -> dict:
         return record.to_dict()
 
     records = run_parallel(
-        items,
+        CDIP_FILES,
         worker,
-        max_workers=min(ctx.max_workers, max(1, len(items))),
-        desc="argo-files",
+        max_workers=min(ctx.max_workers, max(1, len(CDIP_FILES))),
+        desc="cdip-files",
     )
 
     for rec in records:

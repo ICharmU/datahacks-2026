@@ -17,6 +17,13 @@ from .calcofi_manifest import CALCOFI_FILES
 
 SOURCE_NAME = "calcofi"
 
+from common.aws import s3_head_object
+
+def should_skip_remote_upload(s3, bucket_name: str, key: str, expected_size: int) -> bool:
+    head = s3_head_object(s3, bucket_name, key)
+    if head is None:
+        return False
+    return int(head["ContentLength"]) == expected_size
 
 def _resolve_final_path(cache_dir: Path, filename: str) -> Path:
     return cache_dir / normalize_filename(filename)
@@ -104,6 +111,19 @@ def run(ctx: IngestionContext) -> dict:
                     }
                 },
             )
+
+            if not ctx.dry_run and should_skip_remote_upload(
+                s3,
+                bucket_name=ctx.bucket_name,
+                key=raw_key,
+                expected_size=local_path.stat().st_size,
+            ):
+                record.status = "skipped_remote_exists"
+                record.validation["s3"] = {
+                    "ok": True,
+                    "checks": {"remote_exists_same_size": True},
+                }
+                return record.to_dict()
 
             if not ctx.dry_run:
                 upload_path_with_progress(

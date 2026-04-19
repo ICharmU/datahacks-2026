@@ -22,6 +22,14 @@ CATALOGS = {
     "cce2": "https://dods.ndbc.noaa.gov/thredds/catalog/oceansites/DATA/CCE2/catalog.xml",
 }
 
+from common.aws import s3_head_object
+
+def should_skip_remote_upload(s3, bucket_name: str, key: str, expected_size: int) -> bool:
+    head = s3_head_object(s3, bucket_name, key)
+    if head is None:
+        return False
+    return int(head["ContentLength"]) == expected_size
+
 
 def _download_to_cache(download_url: str, dest_path: Path) -> int:
     with urllib.request.urlopen(download_url) as response:
@@ -143,6 +151,19 @@ def run(ctx: IngestionContext) -> dict:
             summary=summary,
             validation={"local": local_validation.to_dict()},
         )
+
+        if not ctx.dry_run and should_skip_remote_upload(
+            s3,
+            bucket_name=ctx.bucket_name,
+            key=raw_key,
+            expected_size=local_path.stat().st_size,
+        ):
+            record.status = "skipped_remote_exists"
+            record.validation["s3"] = {
+                "ok": True,
+                "checks": {"remote_exists_same_size": True},
+            }
+            return record.to_dict()
 
         if not ctx.dry_run:
             upload_path_with_progress(
