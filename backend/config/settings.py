@@ -142,7 +142,7 @@ STATIC_URL = 'static/'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-TOXIC_TIDE_USE_MOCK_DATA = os.getenv("TOXIC_TIDE_USE_MOCK_DATA", "1") == "1"
+TOXIC_TIDE_USE_MOCK_DATA = os.getenv("TOXIC_TIDE_USE_MOCK_DATA", "0") == "1"
 TOXIC_TIDE_ENV = os.getenv("TOXIC_TIDE_ENV", "dev")
 TOXIC_TIDE_AWS_REGION = os.getenv("TOXIC_TIDE_AWS_REGION", "us-west-2")
 

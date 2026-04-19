@@ -74,10 +74,17 @@ class RiskService:
 
     @staticmethod
     def get_aquaculture_watchlist():
+        if RiskService.use_mock_data():
+            # If you don't have a MOCK_WATCHLIST exported from mock_data.py, 
+            # you can return a hardcoded dummy list here just to unblock the UI
+            return [{"site_id": "mock-01", "site_name": "Mock Farm", "lat_dec": 32.7, "lon_dec": -117.2, "risk_score": 0.8, "risk_level": "high", "alert_status": "warn_buyers", "confidence": 0.9, "calendar_date": "2026-04-19"}]
+            
         return ServingDataService.fetch_json("aquaculture_watchlist")
 
     @staticmethod
     def get_aquaculture_timeseries():
+        if RiskService.use_mock_data():
+            return [] # Add mock data here if needed
         return ServingDataService.fetch_json("aquaculture_timeseries")
 
     @staticmethod

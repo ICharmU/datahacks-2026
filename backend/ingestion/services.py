@@ -3,7 +3,9 @@ import boto3
 from botocore.exceptions import ClientError
 from django.conf import settings
 from django.core.cache import cache
+import logging
 
+logging.basicConfig(level=logging.INFO)
 
 class ServingDataService:
     ARTIFACTS = [
@@ -44,7 +46,9 @@ class ServingDataService:
             )
             body = obj["Body"].read().decode("utf-8")
             data = json.loads(body)
-        except ClientError:
+        except Exception as e:
+            # Catch EVERYTHING during the hackathon and print it so you aren't flying blind
+            print(f"⚠️ S3 Fetch Error for {name}: {str(e)}") 
             data = {} if name == "manifest" else []
 
         cache.set(cache_key, data, timeout=settings.TOXIC_TIDE_SERVING_CACHE_SECONDS)
