@@ -4,6 +4,7 @@
 # environment_version = "2"
 # dependencies = [
 #   "python-dotenv",
+#   "numpy<2",
 # ]
 # ///
 from dotenv import load_dotenv
@@ -14,19 +15,41 @@ s3_base_path = os.getenv('raw_bucket_name')
 bottle_s3_path = f"s3://{s3_base_path.split(':::')[-1]}/cal_cofi/194903-202105_Bottle.csv"
 cast_s3_path = f"s3://{s3_base_path.split(':::')[-1]}/cal_cofi/194903-202105_Cast.csv"
 
+os.environ['AWS_ACCESS_KEY_ID'] = os.getenv('aws_access_key_id')
+os.environ['AWS_SECRET_ACCESS_KEY'] = os.getenv('aws_secret_access_key')
+os.environ['AWS_DEFAULT_REGION'] = os.getenv('aws_region', 'us-west-2')
+
 # COMMAND ----------
 
-# 1. Load the tables separately
-# We use inferSchema=True to ensure numbers are read as numbers
-bottle_df = (spark.read
-             .option("header", "true")
-             .option("inferSchema", "true")
-             .csv(bottle_s3_path))
+import boto3
+import pandas as pd
+import io
 
-cast_df = (spark.read
-           .option("header", "true")
-           .option("inferSchema", "true")
-           .csv(cast_s3_path))
+# Initialize the S3 client using the env vars you already set
+s3_client = boto3.client(
+    's3',
+    aws_access_key_id=os.getenv('aws_access_key_id'),
+    aws_secret_access_key=os.getenv('aws_secret_access_key'),
+    region_name=os.getenv('aws_region', 'us-west-2')
+)
+
+def s3_to_spark(bucket, key):
+    # Fetch the object from S3
+    obj = s3_client.get_object(Bucket=bucket, Key=key)
+    
+    # Use 'latin1' encoding to handle the micro (µ) symbol
+    pdf = pd.read_csv(
+        io.BytesIO(obj['Body'].read()), 
+        low_memory=False, 
+        encoding='latin1'
+    )
+    
+    return spark.createDataFrame(pdf)
+
+# Usage
+bucket_name = s3_base_path.split(':::')[-1]
+bottle_df = s3_to_spark(bucket_name, "cal_cofi/194903-202105_Bottle.csv")
+cast_df = s3_to_spark(bucket_name, "cal_cofi/194903-202105_Cast.csv")
 
 # 2. Select only the features you need from the Cast table 
 # This keeps the join operation performant
