@@ -84,6 +84,7 @@ def process_sd_beach_csv(s3_path):
         else:
             # Fallback if coordinates are missing
             station_col = next((c for c in pdf.columns if 'station' in c or 'location' in c or 'beach' in c), None)
+            station_col = 'date'
             if station_col:
                 print(f"  -> [WARNING] No Lat/Lon found. Passing through '{station_col}' as primary key.")
                 pdf['Lat_Dec'] = None
@@ -101,6 +102,8 @@ def process_sd_beach_csv(s3_path):
         if lat_col: exclude_list.append(lat_col)
         if lon_col: exclude_list.append(lon_col)
         
+        pdf['conventional_date'] = pd.to_datetime(pdf['date'], errors='coerce').dt.date
+        pdf = pdf.dropna(subset=['conventional_date'])
         vars_to_keep = [c for c in numeric_cols if not any(ex in c for ex in exclude_list)]
         
         if not vars_to_keep:
@@ -214,6 +217,7 @@ if all_spark_dfs:
     
     print("Writing combined dataset to Delta table...")
     combined_wq_df.write.format("delta").mode("overwrite").saveAsTable("default.sd_beach_wq_tiled_all")
+    display(combined_wq_df)
     print("Done!")
 else:
     print("No valid SD Beach Water Quality data was processed.")

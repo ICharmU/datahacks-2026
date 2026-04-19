@@ -85,8 +85,6 @@ def s3_to_spark(bucket, key):
     
     return spark.createDataFrame(pdf)
 
-# Usage
-bucket_name = s3_base_path.split(':::')[-1]
 bottle_df = s3_to_spark(bucket_name, "cal_cofi/194903-202105_Bottle.csv")
 cast_df = s3_to_spark(bucket_name, "cal_cofi/194903-202105_Cast.csv")
 
@@ -166,8 +164,6 @@ output = df_final.select(
     "environmental_features"
 )
 
-display(output)
-
 # COMMAND ----------
 
 from pyspark.sql import functions as F
@@ -210,3 +206,4 @@ output = df_final.select(
 )
 
 output.write.format("delta").mode("overwrite").saveAsTable("default.cal_cofi_tiled")
+display(output)

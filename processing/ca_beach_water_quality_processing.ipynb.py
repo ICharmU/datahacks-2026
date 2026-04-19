@@ -250,3 +250,4 @@ print(f"Writing final scaled tiles to {FINAL_TABLE}...")
 final_output.write.format("delta").mode("overwrite").saveAsTable(FINAL_TABLE)
 
 print("Pipeline Complete!")
+display(final_output)
