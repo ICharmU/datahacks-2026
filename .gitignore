@@ -1,6 +1,13 @@
 .env
 
 *.csv
+*.gz
+*.tar
+*.sb
+
+cache/
+.cache/
+
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

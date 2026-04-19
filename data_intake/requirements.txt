@@ -1,0 +1,9 @@
+boto3
+botocore
+siphon
+python-dotenv
+requests
+pandas
+xarray
+netcdf4
+beautifulsoup4
